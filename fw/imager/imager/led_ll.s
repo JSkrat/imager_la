@@ -13,9 +13,7 @@
 .global led_send_byte
 
 led_send_byte:
-; 3 + 15 + 14*9 = 143
 #define data r24
-#define cd r22
     in r19, SREG - __SFR_OFFSET                     ; 1
     cli                                             ; 1
 
@@ -23,7 +21,7 @@ led_send_byte:
 	ldi r18, 8										; 1
 	cyc_bit_send:
 		; next bit
-		rol r24										; 1
+		rol data									; 1
 		brcs cbs_send_1								; 2
 			cbs_send_0:
 			// 0.2-0.4us 1
