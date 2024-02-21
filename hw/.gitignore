@@ -1,0 +1,12 @@
+*auto_saved_files*
+*autosave*
+*-cache
+*.gbr
+*.drl
+*gbrjob
+*.kicad_pcb-bak
+*.kicad_sym
+*.net
+*.sch-bak
+*.zip
+~*
