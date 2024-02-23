@@ -18,6 +18,8 @@ int main(void)
 	
     init_power();
 	init_led();
+	init_accelerometer();
+	// delay so leds won't take initial voltage spike from DDRA setup as an extra bit
 	_delay_us(80);
 	line[0].red = 255; line[0].green = 255; line[0].blue = 255;
 	line[1].red = 127; line[1].green = 127; line[1].blue = 127;

@@ -1,0 +1,3 @@
+[submodule "fw/imager/imager/BMI160_driver"]
+	path = fw/imager/imager/BMI160_driver
+	url = https://github.com/boschsensortec/BMI160_driver.git

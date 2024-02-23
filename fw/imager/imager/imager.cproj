@@ -127,6 +127,9 @@
     <Compile Include="accelerometer.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="bmi160_defs.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="hw.h">
       <SubType>compile</SubType>
     </Compile>
