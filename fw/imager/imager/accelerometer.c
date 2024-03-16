@@ -8,18 +8,22 @@
  */
 
 #include <avr/io.h>
+#include <util/delay.h>
 #include "BMI160_driver/bmi160_defs.h"
 #include "hw.h"
 
+
+static struct bmi160_dev dev;
 
 uint8_t communicate_spi(uint8_t output) {
 	USIDR = output;
 	// clear USI CounterOverflow Flag and counter value
 	USISR |= (1 << USIOIF);
-	const uint8_t clock = USICR | (1 << USITC);
+	while ( !(USISR & _BV(USIOIF)) ) USICR |= _BV(USITC);
+	/*const uint8_t clock = USICR | (1 << USITC);
 	do {
 		USICR = clock;
-	} while ((USISR & (1 << USIOIF)) == 0);
+	} while ((USISR & (1 << USIOIF)) == 0);*/
 	return USIDR;
 }
 
@@ -27,10 +31,10 @@ int8_t read(uint8_t reg_addr, uint8_t *data, uint8_t len) {
 	// set CS active (low)
 	ACC_PORT &= ~(1 << ACC_CS);
 	// send read bit and starting address
-	reg_addr |= 0x80;
+	reg_addr |= BMI160_SPI_RD_MASK;
 	communicate_spi(reg_addr);
 	for (int i = 0; i < len; ++i) {
-		*data = communicate_spi(0xFF);
+		*data = communicate_spi(0x00);
 		++data;
 	}
 	// set CS inactive (high)
@@ -42,7 +46,7 @@ int8_t write(uint8_t reg_addr, uint8_t *data, uint8_t len) {
 	// set CS active (low)
 	ACC_PORT &= ~(1 << ACC_CS);
 	// send read bit and starting address
-	reg_addr &= ~0x80;
+	reg_addr &= BMI160_SPI_WR_MASK;
 	communicate_spi(reg_addr);
 	for (int i = 0; i < len; ++i) {
 		communicate_spi(*data);
@@ -54,44 +58,16 @@ int8_t write(uint8_t reg_addr, uint8_t *data, uint8_t len) {
 }
 
 /*!
- * @brief This internal API is used to validate the device structure pointer for
- * null conditions.
- */
-static int8_t null_ptr_check(const struct bmi160_dev *dev)
-{
-    int8_t rslt;
-
-    if ((dev == NULL) || (dev->read == NULL) || (dev->write == NULL) || (dev->delay_ms == NULL))
-    {
-        rslt = BMI160_E_NULL_PTR;
-    }
-    else
-    {
-        /* Device structure is fine */
-        rslt = BMI160_OK;
-    }
-
-    return rslt;
-}
-
-/*!
  * @brief This API reads the data from the given register address
  * of sensor.
  */
-int8_t bmi160_get_regs(uint8_t reg_addr, uint8_t *data, uint16_t len, const struct bmi160_dev *dev)
+int8_t bmi160_get_regs(uint8_t reg_addr, uint8_t *data, uint8_t len)
 {
     int8_t rslt = BMI160_OK;
-    /* Null-pointer check */
-    if ((dev == NULL) || (dev->read == NULL)) {
-        rslt = BMI160_E_NULL_PTR;
-    } else if (len == 0) {
+	if (len == 0) {
         rslt = BMI160_E_READ_WRITE_LENGTH_INVALID;
     } else {
-        /* Configuring reg_addr for SPI Interface */
-        if (dev->intf == BMI160_SPI_INTF) {
-            reg_addr = (reg_addr | BMI160_SPI_RD_MASK);
-        }
-        rslt = dev->read(dev->id, reg_addr, data, len);
+        rslt = read(reg_addr, data, len);
     }
     return rslt;
 }
@@ -100,32 +76,26 @@ int8_t bmi160_get_regs(uint8_t reg_addr, uint8_t *data, uint16_t len, const stru
  * @brief This API writes the given data to the register address
  * of sensor.
  */
-int8_t bmi160_set_regs(uint8_t reg_addr, uint8_t *data, uint16_t len, const struct bmi160_dev *dev)
+int8_t bmi160_set_regs(uint8_t reg_addr, uint8_t *data, uint8_t len)
 {
     int8_t rslt = BMI160_OK;
     uint8_t count = 0;
     /* Null-pointer check */
-    if ((dev == NULL) || (dev->write == NULL)) {
-        rslt = BMI160_E_NULL_PTR;
-    } else if (len == 0) {
+    if (len == 0) {
         rslt = BMI160_E_READ_WRITE_LENGTH_INVALID;
     } else {
-        /* Configuring reg_addr for SPI Interface */
-        if (dev->intf == BMI160_SPI_INTF) {
-            reg_addr = (reg_addr & BMI160_SPI_WR_MASK);
-        }
-        if ((dev->prev_accel_cfg.power == BMI160_ACCEL_NORMAL_MODE) || (dev->prev_gyro_cfg.power == BMI160_GYRO_NORMAL_MODE)) {
-            rslt = dev->write(dev->id, reg_addr, data, len);
+        if ((dev.prev_accel_cfg.power == BMI160_ACCEL_NORMAL_MODE) || (dev.prev_gyro_cfg.power == BMI160_GYRO_NORMAL_MODE)) {
+            rslt = write(reg_addr, data, len);
             /* Kindly refer bmi160 data sheet section 3.2.4 */
-            dev->delay_ms(1);
+            _delay_ms(1);
         } else {
             /*Burst write is not allowed in
              * suspend & low power mode */
             for (; count < len; count++) {
-                rslt = dev->write(dev->id, reg_addr, &data[count], 1);
+                rslt = write(reg_addr, &data[count], 1);
                 reg_addr++;
                 /* Kindly refer bmi160 data sheet section 3.2.4 */
-                dev->delay_ms(1);
+                _delay_ms(1);
             }
         }
         if (rslt != BMI160_OK) {
@@ -166,15 +136,15 @@ int8_t bmi160_soft_reset(struct bmi160_dev *dev)
     int8_t rslt;
     uint8_t data = BMI160_SOFT_RESET_CMD;
     /* Null-pointer check */
-    if ((dev == NULL) || (dev->delay_ms == NULL)) {
+    if (dev == NULL) {
         rslt = BMI160_E_NULL_PTR;
     } else {
         /* Reset the device */
-        rslt = bmi160_set_regs(BMI160_COMMAND_REG_ADDR, &data, 1, dev);
-        dev->delay_ms(BMI160_SOFT_RESET_DELAY_MS);
+        rslt = bmi160_set_regs(BMI160_COMMAND_REG_ADDR, &data, 1);
+        _delay_ms(BMI160_SOFT_RESET_DELAY_MS);
         if ((rslt == BMI160_OK) && (dev->intf == BMI160_SPI_INTF)) {
             /* Dummy read of 0x7F register to enable SPI Interface if SPI is used */
-            rslt = bmi160_get_regs(BMI160_SPI_COMM_TEST_ADDR, &data, 1, dev);
+            rslt = bmi160_get_regs(BMI160_SPI_COMM_TEST_ADDR, &data, 1);
         }
 
         if (rslt == BMI160_OK)
@@ -193,46 +163,47 @@ int8_t bmi160_soft_reset(struct bmi160_dev *dev)
  *  the selection of I2C/SPI read mechanism according to the
  *  selected interface and reads the chip-id of bmi160 sensor.
  */
-int8_t bmi160_init(struct bmi160_dev *dev)
-{
+inline int8_t bmi160_init(struct bmi160_dev *dev) {
     int8_t rslt;
     uint8_t data;
     uint8_t try = 3;
-
-    /* Null-pointer check */
-    rslt = null_ptr_check(dev);
-
-    /* Dummy read of 0x7F register to enable SPI Interface
-     * if SPI is used */
-    if ((rslt == BMI160_OK) && (dev->intf == BMI160_SPI_INTF))
-    {
-        rslt = bmi160_get_regs(BMI160_SPI_COMM_TEST_ADDR, &data, 1, dev);
-    }
-
-    if (rslt == BMI160_OK)
-    {
-        /* Assign chip id as zero */
+	dev->intf = BMI160_SPI_INTF;
+    /* Dummy read of 0x7F register to enable SPI Interface */
+    rslt = bmi160_get_regs(BMI160_SPI_COMM_TEST_ADDR, &data, 1);
+    /* Make sure chip is responding */
+    if (rslt == BMI160_OK) {
         dev->chip_id = 0;
-
-        while ((try--) && (dev->chip_id != BMI160_CHIP_ID))
-        {
+        while ((try--) && (dev->chip_id != BMI160_CHIP_ID)) {
             /* Read chip_id */
-            rslt = bmi160_get_regs(BMI160_CHIP_ID_ADDR, &dev->chip_id, 1, dev);
+			// register 0x00
+            rslt = bmi160_get_regs(BMI160_CHIP_ID_ADDR, &dev->chip_id, 1);
         }
-
-        if ((rslt == BMI160_OK) && (dev->chip_id == BMI160_CHIP_ID))
-        {
+        if ((rslt == BMI160_OK) && (dev->chip_id == BMI160_CHIP_ID)) {
             dev->any_sig_sel = BMI160_BOTH_ANY_SIG_MOTION_DISABLED;
-
             /* Soft reset */
             rslt = bmi160_soft_reset(dev);
-        }
-        else
-        {
+        } else {
             rslt = BMI160_E_DEV_NOT_FOUND;
         }
     }
-
     return rslt;
 }
 
+void init_accelerometer() {
+	// input: int, miso
+	ACC_DDR &= ~((1 << ACC_INT1) | (1 << DDA6));
+	// output: cs, sck, mosi
+	ACC_DDR |= (1 << ACC_CS) | (1 << DDA4) | (1 << DDA5);
+	// init SPI
+	// three-wire mode, clock source is external, positive edge, software clock strobe
+	USICR = (0 << USIWM1) | (1 << USIWM0) | (1 << USICS1) | (0 << USICS0) | (1 << USICLK);
+	/* CSB pin is made high for selecting SPI protocol
+     * Note: CSB has to see rising after power up, to switch to SPI protocol */
+	ACC_PORT &= ~(1 << ACC_CS);
+	_delay_ms(10);
+	// set CS inactive
+	ACC_PORT |= (1 << ACC_CS);
+	// empirical: there should be a delay after CS inactive. It won't communicate anything but 0xFF until then
+	_delay_us(150);
+	bmi160_init(&dev);
+}

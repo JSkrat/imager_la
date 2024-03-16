@@ -3,7 +3,7 @@
  *
  * Created: 18.02.2024 15:10:22
  * Author : Minty
- */ 
+ */
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -13,9 +13,7 @@
 #include "accelerometer.h"
 
 
-int main(void)
-{
-	
+int main(void) {
     init_power();
 	init_led();
 	init_accelerometer();
