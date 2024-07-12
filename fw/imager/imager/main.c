@@ -11,6 +11,7 @@
 #include "power.h"
 #include "led.h"
 #include "accelerometer.h"
+#include "image.h"
 
 
 int main(void) {
@@ -28,6 +29,7 @@ int main(void) {
 	line[6].red = 255; line[6].green = 31;  line[6].blue = 127;
 	line[7].red = 255; line[7].green = 63;  line[7].blue = 192;
 	refresh_leds();
+	init_image();
 	sei();
     while (1) {
 		sleep_mode();

@@ -9,6 +9,7 @@
 #ifndef LED_H_
 #define LED_H_
 #include "hw.h"
+#include <avr/io.h>
 
 inline void init_led() {
 	LED_DDR |= (1 << LED_PIN);

@@ -7,6 +7,7 @@
  * code partially adapted from https://github.com/boschsensortec/BMI160_driver
  */
 
+#include <stdbool.h>
 #include <avr/io.h>
 #include <util/delay.h>
 #include "BMI160_driver/bmi160_defs.h"
@@ -27,22 +28,21 @@ uint8_t communicate_spi(uint8_t output) {
 	return USIDR;
 }
 
-int8_t read(uint8_t reg_addr, uint8_t *data, uint8_t len) {
+void read(uint8_t reg_addr, uint8_t *data, const uint8_t len) {
 	// set CS active (low)
 	ACC_PORT &= ~(1 << ACC_CS);
 	// send read bit and starting address
 	reg_addr |= BMI160_SPI_RD_MASK;
 	communicate_spi(reg_addr);
 	for (int i = 0; i < len; ++i) {
-		*data = communicate_spi(0x00);
+		*data = communicate_spi(0xFF);
 		++data;
 	}
 	// set CS inactive (high)
 	ACC_PORT |= (1 << ACC_CS);
-	return BMI160_OK;
 }
 
-int8_t write(uint8_t reg_addr, uint8_t *data, uint8_t len) {
+void write(uint8_t reg_addr, const uint8_t *data, const uint8_t len) {
 	// set CS active (low)
 	ACC_PORT &= ~(1 << ACC_CS);
 	// send read bit and starting address
@@ -54,22 +54,23 @@ int8_t write(uint8_t reg_addr, uint8_t *data, uint8_t len) {
 	}
 	// set CS inactive (high)
 	ACC_PORT |= (1 << ACC_CS);
-	return BMI160_OK;
 }
 
-/*!
- * @brief This API reads the data from the given register address
- * of sensor.
- */
-int8_t bmi160_get_regs(uint8_t reg_addr, uint8_t *data, uint8_t len)
-{
-    int8_t rslt = BMI160_OK;
-	if (len == 0) {
-        rslt = BMI160_E_READ_WRITE_LENGTH_INVALID;
-    } else {
-        rslt = read(reg_addr, data, len);
-    }
-    return rslt;
+uint8_t command(const uint8_t command) {
+	ACC_PORT &= ~(1 << ACC_CS);
+	communicate_spi(BMI160_COMMAND_REG_ADDR & BMI160_SPI_WR_MASK);
+	communicate_spi(command);
+	ACC_PORT |= (1 << ACC_CS);
+	// reading that register after some command during initialization caused accelerometer to not initialize properly
+	/*_delay_us(1);
+	ACC_PORT &= ~(1 << ACC_CS);
+	// Reports sensor error flags. Flags are reset when read.
+	// The register is meant for debug purposes, not for regular verification if an operation completed
+	// successfully.
+	communicate_spi(BMI160_ERROR_REG_ADDR | BMI160_SPI_RD_MASK);
+	const uint8_t ret = communicate_spi(0xFF);
+	ACC_PORT |= (1 << ACC_CS);*/
+	return 0;
 }
 
 /*!
@@ -85,14 +86,14 @@ int8_t bmi160_set_regs(uint8_t reg_addr, uint8_t *data, uint8_t len)
         rslt = BMI160_E_READ_WRITE_LENGTH_INVALID;
     } else {
         if ((dev.prev_accel_cfg.power == BMI160_ACCEL_NORMAL_MODE) || (dev.prev_gyro_cfg.power == BMI160_GYRO_NORMAL_MODE)) {
-            rslt = write(reg_addr, data, len);
+            write(reg_addr, data, len);
             /* Kindly refer bmi160 data sheet section 3.2.4 */
             _delay_ms(1);
         } else {
             /*Burst write is not allowed in
              * suspend & low power mode */
             for (; count < len; count++) {
-                rslt = write(reg_addr, &data[count], 1);
+                write(reg_addr, &data[count], 1);
                 reg_addr++;
                 /* Kindly refer bmi160 data sheet section 3.2.4 */
                 _delay_ms(1);
@@ -103,6 +104,25 @@ int8_t bmi160_set_regs(uint8_t reg_addr, uint8_t *data, uint8_t len)
         }
     }
     return rslt;
+}
+
+/// read a force along X axis (the LED line is perpendicular to it)
+int16_t read_x() {
+	int16_t result;
+	read(0x12, (uint8_t *) &result, 2);
+	return result;
+}
+
+int16_t read_y() {
+	int16_t result;
+	read(0x14, (uint8_t *) &result, 2);
+	return result;
+}
+
+int16_t read_z() {
+	int16_t result;
+	read(0x16, (uint8_t *) &result, 2);
+	return result;
 }
 
 /*!
@@ -133,18 +153,20 @@ static void default_param_settg(struct bmi160_dev *dev)
  */
 int8_t bmi160_soft_reset(struct bmi160_dev *dev)
 {
-    int8_t rslt;
+    int8_t rslt = 0;
     uint8_t data = BMI160_SOFT_RESET_CMD;
     /* Null-pointer check */
     if (dev == NULL) {
         rslt = BMI160_E_NULL_PTR;
     } else {
         /* Reset the device */
-        rslt = bmi160_set_regs(BMI160_COMMAND_REG_ADDR, &data, 1);
+        //rslt =
+		write(BMI160_COMMAND_REG_ADDR, &data, 1);
         _delay_ms(BMI160_SOFT_RESET_DELAY_MS);
         if ((rslt == BMI160_OK) && (dev->intf == BMI160_SPI_INTF)) {
             /* Dummy read of 0x7F register to enable SPI Interface if SPI is used */
-            rslt = bmi160_get_regs(BMI160_SPI_COMM_TEST_ADDR, &data, 1);
+            //rslt =
+			read(BMI160_SPI_COMM_TEST_ADDR, &data, 1);
         }
 
         if (rslt == BMI160_OK)
@@ -169,24 +191,68 @@ inline int8_t bmi160_init(struct bmi160_dev *dev) {
     uint8_t try = 3;
 	dev->intf = BMI160_SPI_INTF;
     /* Dummy read of 0x7F register to enable SPI Interface */
-    rslt = bmi160_get_regs(BMI160_SPI_COMM_TEST_ADDR, &data, 1);
+    //rslt =
+	read(BMI160_SPI_COMM_TEST_ADDR, &data, 1);
     /* Make sure chip is responding */
     if (rslt == BMI160_OK) {
         dev->chip_id = 0;
         while ((try--) && (dev->chip_id != BMI160_CHIP_ID)) {
             /* Read chip_id */
 			// register 0x00
-            rslt = bmi160_get_regs(BMI160_CHIP_ID_ADDR, &dev->chip_id, 1);
+            //rslt =
+			read(BMI160_CHIP_ID_ADDR, &dev->chip_id, 1);
         }
         if ((rslt == BMI160_OK) && (dev->chip_id == BMI160_CHIP_ID)) {
             dev->any_sig_sel = BMI160_BOTH_ANY_SIG_MOTION_DISABLED;
             /* Soft reset */
             rslt = bmi160_soft_reset(dev);
+			_delay_ms(10);
         } else {
             rslt = BMI160_E_DEV_NOT_FOUND;
         }
     }
     return rslt;
+}
+
+bool init_bmi160() {
+	uint8_t data;
+	/* Dummy read of 0x7F register to enable SPI Interface */
+	read(BMI160_SPI_COMM_TEST_ADDR, &data, 1);
+	/* Make sure chip is responding */
+	data = 0;
+	uint8_t try = 3;
+    while ((try--) && (data != BMI160_CHIP_ID)) {
+	    /* Read chip_id */
+	    // register 0x00
+	    read(BMI160_CHIP_ID_ADDR, &data, 1);
+    }
+	if (data != BMI160_CHIP_ID) return false;
+	/* Issue a soft-reset to bring the device into a clean state */
+	command(BMI160_SOFT_RESET_CMD);
+	_delay_ms(BMI160_SOFT_RESET_DELAY_MS);
+	_delay_ms(10);
+	/* Dummy read of 0x7F register to enable SPI Interface */
+	read(BMI160_SPI_COMM_TEST_ADDR, &data, 1);
+	_delay_ms(1);
+	// power up the accelerometer
+	// acc_set_pmu_mode: 0b0001 00nn
+	// Sets the PMU mode for the accelerometer. The encoding for ‘nn’ is identical to
+	// acc_pmu_status in Register (0x03) PMU_STATUS.
+	// acc_pmu_status Accel Mode
+	// 0b00 Suspend
+	// 0b01 Normal
+	// 0b10 Low Power
+	command(BMI160_ACCEL_NORMAL_MODE);
+	_delay_ms(4);
+	data = 0;
+	while (data != 0b00000001) {
+		_delay_ms(1);
+		read(BMI160_PMU_STATUS_ADDR, &data, 1);
+		// bits 4-5
+		data >>= 4;
+		data &= 0b00000011;
+	}
+	return true;
 }
 
 void init_accelerometer() {
@@ -205,5 +271,5 @@ void init_accelerometer() {
 	ACC_PORT |= (1 << ACC_CS);
 	// empirical: there should be a delay after CS inactive. It won't communicate anything but 0xFF until then
 	_delay_us(150);
-	bmi160_init(&dev);
+	init_bmi160(&dev);
 }

@@ -130,6 +130,12 @@
     <Compile Include="hw.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="image.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="image.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="led.c">
       <SubType>compile</SubType>
     </Compile>
